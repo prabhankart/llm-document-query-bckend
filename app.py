@@ -38,6 +38,17 @@ def allowed_file(filename):
            filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
 
 # --- API Routes ---
+
+# Add this new route to test if the server is running
+@app.route('/')
+def index():
+    return "The Flask backend is running successfully!"
+
+# --- API Routes ---
+# It's good practice to prefix all API routes with '/api/'.
+@app.route('/api/upload', methods=['POST'])
+def upload_file_route():
+    # ... rest of your code
 # It's good practice to prefix all API routes with '/api/'.
 @app.route('/api/upload', methods=['POST'])
 def upload_file_route():
