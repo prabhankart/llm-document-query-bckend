@@ -1,0 +1,10 @@
+Flask
+Flask-Cors
+PyPDF2
+python-docx
+langchain
+langchain-google-genai
+pymongo
+werkzeug
+google-generativeai
+gunicorn # Add this line for the production server
