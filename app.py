@@ -7,28 +7,16 @@ import services.vector_store as vector_store
 import services.llm_service as llm_service
 
 # --- Configuration ---
-# Using a class for configuration makes it cleaner and easier to manage.
 class Config:
-    # Define a temporary folder for uploads.
-    # WARNING: On hosting platforms like Render or Heroku, this filesystem is "ephemeral".
-    # This means any files you save here will be DELETED when the server restarts or sleeps.
-    # This approach is okay for processing a file immediately, but not for long-term storage.
-    UPLOAD_FOLDER = 'uploads'
+    # IMPORTANT: Use the /tmp directory for Vercel
+    UPLOAD_FOLDER = '/tmp/uploads' 
     ALLOWED_EXTENSIONS = {'pdf', 'docx'}
-    
-    # --- IMPORTANT FOR DEPLOYMENT ---
-    # Get the frontend URL from an environment variable for CORS.
-    # This is much more secure than allowing all origins ('*').
-    # For local development, you can set this to 'http://localhost:3000'.
-    # In production (on Netlify/Vercel), you'll set this to your live frontend URL.
     FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 
 app = Flask(__name__)
 app.config.from_object(Config)
 
-# --- CORS (Cross-Origin Resource Sharing) Setup ---
-# This is a critical security step. We are telling the backend to only accept
-# API requests from our specific frontend application.
+# --- CORS Setup ---
 CORS(app, resources={r"/api/*": {"origins": app.config["FRONTEND_URL"]}})
 
 # --- Helper Function ---
@@ -38,18 +26,11 @@ def allowed_file(filename):
            filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
 
 # --- API Routes ---
-
-# Add this new route to test if the server is running
+# This is the entry point for Vercel
 @app.route('/')
 def index():
     return "The Flask backend is running successfully!"
 
-# --- API Routes ---
-# It's good practice to prefix all API routes with '/api/'.
-@app.route('/api/upload', methods=['POST'])
-def upload_file_route():
-    # ... rest of your code
-# It's good practice to prefix all API routes with '/api/'.
 @app.route('/api/upload', methods=['POST'])
 def upload_file_route():
     if 'file' not in request.files:
@@ -64,7 +45,7 @@ def upload_file_route():
     if not file or not allowed_file(file.filename):
         return jsonify({"success": False, "error": "File type not allowed"}), 400
 
-    filepath = None  # Initialize filepath to None
+    filepath = None
     try:
         filename = secure_filename(file.filename)
         # Ensure the temporary upload directory exists
@@ -72,12 +53,6 @@ def upload_file_route():
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(filepath)
 
-        # --- NOTE ON STATE ---
-        # Your vector_store seems to be in-memory. This means every time the server
-        # restarts or you redeploy, the entire index of the document will be LOST.
-        # For a production app, you should use a persistent vector database like
-        # Pinecone, Weaviate, or a cloud database with vector capabilities.
-        
         print("Processing document...")
         text_chunks = doc_processor.process_document(filepath)
         if not text_chunks:
@@ -102,14 +77,11 @@ def upload_file_route():
         }), 200
     
     except Exception as e:
-        # Log the full error for debugging
         print(f"An error occurred: {e}")
         return jsonify({"success": False, "error": "An internal server error occurred."}), 500
 
     finally:
-        # --- CRITICAL CLEANUP STEP ---
-        # Always remove the uploaded file from the temporary directory
-        # after you are done with it.
+        # CRITICAL CLEANUP STEP
         if filepath and os.path.exists(filepath):
             os.remove(filepath)
             print(f"Cleaned up temporary file: {filepath}")
@@ -125,7 +97,6 @@ def handle_query_route():
     try:
         context_chunks = vector_store.find_relevant_chunks(query)
         if not context_chunks:
-            # Return a structured response even if no context is found
             return jsonify({
                 "success": True,
                 "decision": "Cannot Determine",
@@ -140,14 +111,8 @@ def handle_query_route():
         print(f"An error occurred during query: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
-# --- Main Entry Point for Running the App ---
+# This part is not needed for Vercel, but it's good to keep for local testing
 if __name__ == '__main__':
-    # Get port from environment variable for deployment platforms like Render.
-    # Default to 8000 for local development.
     port = int(os.environ.get("PORT", 8000))
-    
-    # Debug mode should be OFF in a production environment.
-    # You can set an environment variable like FLASK_DEBUG=1 to enable it.
     is_debug_mode = os.environ.get("FLASK_DEBUG", "False").lower() in ['true', '1']
-    
     app.run(host='0.0.0.0', port=port, debug=is_debug_mode)
