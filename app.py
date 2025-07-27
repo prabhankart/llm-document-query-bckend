@@ -8,16 +8,20 @@ import services.llm_service as llm_service
 
 # --- Configuration ---
 class Config:
-    # IMPORTANT: Use the /tmp directory for Vercel
-    UPLOAD_FOLDER = '/tmp/uploads' 
+    # IMPORTANT: Use the /tmp directory for Vercel's temporary filesystem
+    UPLOAD_FOLDER = '/tmp/uploads'
     ALLOWED_EXTENSIONS = {'pdf', 'docx'}
-    FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+    # This variable will hold one or more frontend URLs, separated by commas
+    FRONTEND_URLS = os.environ.get("FRONTEND_URLS", "http://localhost:3000")
 
 app = Flask(__name__)
 app.config.from_object(Config)
 
-# --- CORS Setup ---
-CORS(app, resources={r"/api/*": {"origins": app.config["FRONTEND_URL"]}})
+# --- CORS (Cross-Origin Resource Sharing) Setup ---
+# This setup allows your backend to accept requests from the URLs you specify.
+# It splits the comma-separated string from the environment variable into a list.
+allowed_origins = [url.strip() for url in app.config["FRONTEND_URLS"].split(',')]
+CORS(app, resources={r"/api/*": {"origins": allowed_origins}})
 
 # --- Helper Function ---
 def allowed_file(filename):
@@ -26,7 +30,7 @@ def allowed_file(filename):
            filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
 
 # --- API Routes ---
-# This is the entry point for Vercel
+# This is the entry point Vercel will use
 @app.route('/')
 def index():
     return "The Flask backend is running successfully!"
@@ -35,20 +39,19 @@ def index():
 def upload_file_route():
     if 'file' not in request.files:
         return jsonify({"success": False, "error": "No file part in the request"}), 400
-    
+
     file = request.files['file']
     generate_summary = request.form.get('generateSummary') == 'true'
 
     if file.filename == '':
         return jsonify({"success": False, "error": "No file selected"}), 400
-        
+
     if not file or not allowed_file(file.filename):
         return jsonify({"success": False, "error": "File type not allowed"}), 400
 
     filepath = None
     try:
         filename = secure_filename(file.filename)
-        # Ensure the temporary upload directory exists
         os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(filepath)
@@ -65,17 +68,17 @@ def upload_file_route():
         if generate_summary:
             print("Generating initial summary...")
             summary = llm_service.generate_summary(text_chunks)
-        
+
         print("Generating sample questions...")
         sample_questions = llm_service.generate_sample_questions(text_chunks)
 
         return jsonify({
-            "success": True, 
+            "success": True,
             "message": "File processed successfully",
             "summary": summary,
-            "sampleQuestions": sample_questions 
+            "sampleQuestions": sample_questions
         }), 200
-    
+
     except Exception as e:
         print(f"An error occurred: {e}")
         return jsonify({"success": False, "error": "An internal server error occurred."}), 500
@@ -92,7 +95,7 @@ def handle_query_route():
     data = request.get_json()
     if not data or 'query' not in data:
         return jsonify({"success": False, "error": "Query not provided"}), 400
-    
+
     query = data['query']
     try:
         context_chunks = vector_store.find_relevant_chunks(query)
@@ -103,10 +106,10 @@ def handle_query_route():
                 "amount": "N/A",
                 "justification": ["Could not find relevant information in the uploaded document."]
             })
-            
+
         response_data = llm_service.generate_structured_response(query, context_chunks)
         return jsonify(response_data)
-        
+
     except Exception as e:
         print(f"An error occurred during query: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
